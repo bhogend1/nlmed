@@ -1,0 +1,23 @@
+d 'NLMED': decomposition of nonlinear models
+d
+d nlmed is used for mediation analysis of nonlinear models.
+d The package is similar to KHB, but has more functionalities,
+d including model constraints, bootstrapping, and multiple imputation. 
+d Models are estimated using generalized structural equation modeling.
+d
+d KW: KHB
+d KW: decomposition
+d KW: nonlinear
+d KW: mediation
+d KW: gsem
+d
+d Requires: Stata version 13
+d
+d Distribution-Date: 2021-5-07
+d
+d
+d Authors: Bram Hogendoorn, University of Amsterdam
+d Support: Email b.hogendoorn@uva.nl
+d
+f ado/nlmed.ado
+f ado/nlmed.sthlp
