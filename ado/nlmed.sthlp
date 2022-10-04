@@ -208,4 +208,4 @@ Comparing regression coefficients between same-sample nested models using logit 
 {pstd}Bram Hogendoorn (b.hogendoorn@uva.nl).{p_end}
 {pstd}This program is written in Stata, not Mata. Anyone who would like to translate this program is invited to do so.{p_end}
 
-{pstd}Version: May 7th, 2021.{p_end}
+{pstd}Version: October 4th, 2022.{p_end}
