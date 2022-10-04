@@ -190,8 +190,18 @@ if "`miopts'"!="" {
 
 
 * mark the sample
+// mi data should be flong for correct marking
+if "`miprefix'"!="" {
+	local mistyle `_dta[_mi_style]'
+	if "`mistyle'"!="flong" {
+		noisily mi convert flong, clear noupdate
+	}
+}
+
+// create if-condition
 marksample touse
 markout `touse' `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' `clustvar'
+
 
 
 * set mediating paths
@@ -524,6 +534,13 @@ matrix colnames `percexpl' = "Mediation"
 
 
 * post results
+// convert mi data back to original style
+if "`miprefix'"!="" {
+	if "`_dta[_mi_style]'"!="`mistyle'" {
+		quietly noisily mi convert `mistyle', clear noupdate
+	}
+}
+
 // retrieve sem information
 local N = e(N)
 local N_clust = e(N_clust)
