@@ -159,6 +159,13 @@ if "`from'"!="" {
 	}
 }
 
+// check variable length
+foreach x in `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' {
+    if strlen("`x'")>25 {
+	    di as error "Variable name `x' is longer than 25 characters. Depending on the specified options, this might cause an error."
+	}
+}
+
 // local: weight
 if "`weight'"!="" {
 	local weightexpr "[`weight'`exp']"
@@ -190,11 +197,13 @@ if "`miopts'"!="" {
 
 
 * mark the sample
+// preserve original data
+preserve
+
 // mi data should be flong for correct marking
 if "`miprefix'"!="" {
-	local mistyle `_dta[_mi_style]'
-	if "`mistyle'"!="flong" {
-		noisily mi convert flong, clear noupdate
+	if "`_dta[_mi_style]'"!="flong" {
+		quietly mi convert flong, clear noupdate
 	}
 }
 
@@ -276,7 +285,8 @@ if "`from'"=="" {
 	tempname startvals
 	
 	if "`miprefix'"!="" {
-		preserve
+		quietly snapshot save
+		local snapnumber = r(snapshot)
 		mi extract 0, clear
 	}
 	
@@ -301,7 +311,8 @@ if "`from'"=="" {
 	}
 	
 	if "`miprefix'"!="" {
-		restore
+		snapshot restore `snapnumber'
+		snapshot erase `snapnumber'
 	}
 }
 
@@ -355,122 +366,121 @@ if "`pathb'"!="" {
 
 
 * obtain effects
-// temporarily clear data for speed
-preserve
-	clear
+// clear data for speed
+clear
 
-	// direct effect
-	tempname directcoef directvar
-	scalar `directcoef' = _b[`depvar':`decompose']
-	scalar `directvar' = (_se[`depvar':`decompose'])^2
+// direct effect
+tempname directcoef directvar
+scalar `directcoef' = _b[`depvar':`decompose']
+scalar `directvar' = (_se[`depvar':`decompose'])^2
 
-	// mediator effects (individual)
-	tempname b_fin V_fin
-	matrix define `b_fin' = J(1,`npathvars'+4,0)
-	matrix define `V_fin' = J(`npathvars'+4,`npathvars'+4,0)
+// mediator effects (individual)
+tempname b_fin V_fin
+matrix define `b_fin' = J(1,`npathvars'+4,0)
+matrix define `V_fin' = J(`npathvars'+4,`npathvars'+4,0)
 
-	`disoutput' di _newline
-	di as text "compute mediators..." _cont
-	`disoutput' di as result " (`nmediators')"
+`disoutput' di _newline
+di as text "compute mediators..." _cont
+`disoutput' di as result " (`nmediators')"
 
-	local mediationeffect=0
-	forvalues i = 1/`nmediators' {
-		local x : word `i' of `mediators'
-		local nlcomline "_b[`x':`decompose']*_b[`depvar':`x']"
-		local mediationeffect "`mediationeffect' + _b[`x':`decompose']*_b[`depvar':`x']"
-		if "`reliability'"!="" {
-			local relcomma=subinstr("`relvars'"," ",`"",""',.)
-			local relapos `""`relcomma'""'
-			local medapos `""`x'""'
-			if inlist(`medapos', `relapos')==1 {
-				local upper = strupper("`x'")
-				local mediationeffect=subinstr("`mediationeffect'","`x'","`upper'_LATENT",.)
-				local nlcomline=subinstr("`nlcomline'","`x'","`upper'_LATENT",.)
-			}
+local mediationeffect=0
+forvalues i = 1/`nmediators' {
+	local x : word `i' of `mediators'
+	local nlcomline "_b[`x':`decompose']*_b[`depvar':`x']"
+	local mediationeffect "`mediationeffect' + _b[`x':`decompose']*_b[`depvar':`x']"
+	if "`reliability'"!="" {
+		local relcomma=subinstr("`relvars'"," ",`"",""',.)
+		local relapos `""`relcomma'""'
+		local medapos `""`x'""'
+		if inlist(`medapos', `relapos')==1 {
+			local upper = strupper("`x'")
+			local mediationeffect=subinstr("`mediationeffect'","`x'","`upper'_LATENT",.)
+			local nlcomline=subinstr("`nlcomline'","`x'","`upper'_LATENT",.)
 		}
-		quietly nlcom `nlcomline'
-		`disoutput' di as text "." _cont
-		matrix `b_fin'[1,`i'] = r(b)
-		matrix `V_fin'[`i',`i'] = r(V)
 	}
+	quietly nlcom `nlcomline'
+	`disoutput' di as text "." _cont
+	matrix `b_fin'[1,`i'] = r(b)
+	matrix `V_fin'[`i',`i'] = r(V)
+}
 
-	// mediation effect (total)
-	tempname mediationcoef mediationvar
-	if "`fast'"=="" {
-		`disoutput' di _newline
-		
-		if "`confounders'"=="" {
-			di as text "indirect effect..." _cont
-		}
-		else {
-			di as text "mediation effect..." _cont
-		}
-		quietly nlcom `mediationeffect'
-		matrix define `mediationcoef' = r(b)
-		matrix define `mediationvar' = r(V)
+// mediation effect (total)
+tempname mediationcoef mediationvar
+if "`fast'"=="" {
+	`disoutput' di _newline
+	
+	if "`confounders'"=="" {
+		di as text "indirect effect..." _cont
 	}
 	else {
-		matrix define `mediationcoef' = `mediationeffect'
-		matrix define `mediationvar' = 0
+		di as text "mediation effect..." _cont
 	}
+	quietly nlcom `mediationeffect'
+	matrix define `mediationcoef' = r(b)
+	matrix define `mediationvar' = r(V)
+}
+else {
+	matrix define `mediationcoef' = `mediationeffect'
+	matrix define `mediationvar' = 0
+}
 
-	// confounding effects
-	local confoundingeffect=0
-	tempname confoundingcoef confoundingvar
-	if "`confounders'"!="" {
-		local nconfounders : word count `confounders'
+// confounding effects
+local confoundingeffect=0
+tempname confoundingcoef confoundingvar
+if "`confounders'"!="" {
+	local nconfounders : word count `confounders'
+	if "`disentangle'"!="" {
+		`disoutput' di _newline
+		di as text "disentangle confounders..." _cont
+		`disoutput' di as result " (`nconfounders')"
+	}
+	forvalues i = 1/`nconfounders' {
+		local x : word `i' of `confounders'
+		local confoundingeffect "`confoundingeffect' + _b[`x':`decompose']*_b[`depvar':`x']"
+		local j=`nmediators'+`i'
 		if "`disentangle'"!="" {
-			`disoutput' di _newline
-			di as text "disentangle confounders..." _cont
-			`disoutput' di as result " (`nconfounders')"
-		}
-		forvalues i = 1/`nconfounders' {
-			local x : word `i' of `confounders'
-			local confoundingeffect "`confoundingeffect' + _b[`x':`decompose']*_b[`depvar':`x']"
-			local j=`nmediators'+`i'
-			if "`disentangle'"!="" {
-				quietly nlcom _b[`x':`decompose']*_b[`depvar':`x']
-				matrix `b_fin'[1,`j'] 	= r(b)
-				matrix `V_fin'[`j',`j'] = r(V)
-				`disoutput' di as text "." _cont			
-			}
-			else {
-				matrix `b_fin'[1,`j'] 	= 0
-				matrix `V_fin'[`j',`j'] = 0
-			}
-		}
-		if "`fast'"=="" {
-			`disoutput' di _newline
-			di as text "confounding effect..." _cont
-			quietly nlcom `confoundingeffect'
-			matrix define `confoundingcoef' = r(b)
-			matrix define `confoundingvar' = r(V)
+			quietly nlcom _b[`x':`decompose']*_b[`depvar':`x']
+			matrix `b_fin'[1,`j'] 	= r(b)
+			matrix `V_fin'[`j',`j'] = r(V)
+			`disoutput' di as text "." _cont			
 		}
 		else {
-			matrix define `confoundingcoef' = `confoundingeffect'
-			matrix define `confoundingvar' = 0
+			matrix `b_fin'[1,`j'] 	= 0
+			matrix `V_fin'[`j',`j'] = 0
 		}
+	}
+	if "`fast'"=="" {
+		`disoutput' di _newline
+		di as text "confounding effect..." _cont
+		quietly nlcom `confoundingeffect'
+		matrix define `confoundingcoef' = r(b)
+		matrix define `confoundingvar' = r(V)
 	}
 	else {
 		matrix define `confoundingcoef' = `confoundingeffect'
 		matrix define `confoundingvar' = 0
 	}
+}
+else {
+	matrix define `confoundingcoef' = `confoundingeffect'
+	matrix define `confoundingvar' = 0
+}
 
-	// total effect
-	tempname totalcoef totalvar
-	if "`fast'"=="" {
-		`disoutput' di _newline
-		di as text "total effect..."
-		quietly nlcom _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
-		matrix define `totalcoef' = r(b)
-		matrix define `totalvar' = r(V)
-	}
-	else {
-		matrix define `totalcoef' = _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
-		matrix define `totalvar' = 0
-	}
+// total effect
+tempname totalcoef totalvar
+if "`fast'"=="" {
+	`disoutput' di _newline
+	di as text "total effect..."
+	quietly nlcom _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
+	matrix define `totalcoef' = r(b)
+	matrix define `totalvar' = r(V)
+}
+else {
+	matrix define `totalcoef' = _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
+	matrix define `totalvar' = 0
+}
 
-	// restore data
+// restore original data
 restore
 
 
@@ -534,13 +544,6 @@ matrix colnames `percexpl' = "Mediation"
 
 
 * post results
-// convert mi data back to original style
-if "`miprefix'"!="" {
-	if "`_dta[_mi_style]'"!="`mistyle'" {
-		quietly noisily mi convert `mistyle', clear noupdate
-	}
-}
-
 // retrieve sem information
 local N = e(N)
 local N_clust = e(N_clust)
@@ -593,7 +596,4 @@ if "`reliability'"!="" {
 
 // display percentage explained
 `distable' matlist `percexpl', title("Percentage explained") rowtitle(`decompose') twidth(20)
-
-// drop latent variables
-capture drop *_LATENT
 end
