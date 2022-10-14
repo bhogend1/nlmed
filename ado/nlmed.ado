@@ -46,26 +46,27 @@ else {
 
 // check if variance estimator supported
 if "`vce'"!="" {
-	gettoken vce1 vce2 : vce
-	if "`vce1'"!="oim" & "`vce1'"!="opg" & "`vce1'"!="robust" & "`vce1'"!="cluster" & "`vce1'"!="bootstrap" {
+	gettoken vcetype vceopts : vce
+	if "`vcetype'"!="oim" & "`vcetype'"!="opg" & "`vcetype'"!="robust" & "`vcetype'"!="cluster" & "`vcetype'"!="bootstrap" & "`vcetype'"!="bs" {
 		di as error "Variance estimator should be oim, robust, cluster, or bootstrap."
 		exit
 	}
-	if "`vce1'"=="oim" | "`vce1'"=="opg" | "`vce1'"=="robust" {
-		local vce "vce(`vce1')"
+	if "`vcetype'"=="oim" | "`vcetype'"=="opg" | "`vcetype'"=="robust" {
+		local vce "vce(`vcetype')"
 	}
-	if "`vce1'"=="cluster" {
-		capture confirm numeric variable `vce2'
+	if "`vcetype'"=="cluster" {
+		capture confirm numeric variable `vceopts'
 		if _rc!=0 {
-			capture confirm string variable `vce2'
+			capture confirm string variable `vceopts'
 			if _rc!=0 {
 				di as error "Clustvar should be string or numeric."
 				exit
 			}
 		}
-		local vce "vce(cluster `vce2')"
+		local vce "vce(cluster`vceopts')"		
+		local clustvar `vceopts'
 	}
-	if "`vce1'"=="bootstrap" {
+	if "`vcetype'"=="bootstrap" | "`vcetype'"=="bs" {
 		if "`reliability'"!="" {
 			di as error "Bootstrap cannot be combined with reliability corrections."
 			exit
@@ -79,7 +80,7 @@ if "`vce'"!="" {
 			exit
 		}
 		local vce
-		local bsprefix "bootstrap, force`vce2': "
+		local bsprefix "bootstrap, force`vceopts': "
 	}
 }
 else {
@@ -206,11 +207,9 @@ if "`miprefix'"!="" {
 		quietly mi convert flong, clear noupdate
 	}
 }
-
-// create if-condition
 marksample touse
-markout `touse' `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' `clustvar'
-
+markout `touse' `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' `clustvar', strok
+quietly keep if `touse'
 
 
 * set mediating paths
@@ -296,16 +295,16 @@ if "`from'"=="" {
 		local x_lastpath=subinstr("`lastpath'",", `model'"," ",.)
 		`disoutput' di _newline
 		di as text "obtain starting values..." _cont
-		`disoutput' sem `x_lastpath' `x_addpaths' `x_firstpaths' if `touse' `weightexpr', nocnsreport nodescribe noheader nofootnote `reliability' `constraints' `options'
+		`disoutput' sem `x_lastpath' `x_addpaths' `x_firstpaths' `weightexpr', nocnsreport nodescribe noheader nofootnote `reliability' `constraints' `options'
 		matrix define `startvals' = e(b)
-		`disoutput' gsem `lastpath' `addpaths' if `touse' `weightexpr', listwise nocnsreport noheader nodvheader `reliability' `constraints' from(`startvals', skip) `options'
+		`disoutput' gsem `lastpath' `addpaths' `weightexpr', listwise nocnsreport noheader nodvheader `reliability' `constraints' from(`startvals', skip) `options'
 		matrix define `startvals' = e(b)
 		local from "from(`startvals', skip)"
 	}
 	else {
 		`disoutput' di _newline
 		di as text "obtain starting values..." _cont
-		`disoutput' gsem `lastpath' if `touse' `weightexpr', listwise nocnsreport noheader nodvheader `constraints' `options'
+		`disoutput' gsem `lastpath' `weightexpr', listwise nocnsreport noheader nodvheader `constraints' `options'
 		matrix define `startvals' = e(b)
 		local from "from(`startvals', skip)"
 	}
@@ -319,7 +318,7 @@ if "`from'"=="" {
 // estimate
 `disoutput' di _newline
 di as text "estimate structural equation model..." _cont
-`disoutput' `miprefix' `bsprefix' gsem `lastpath' `firstpaths' `addpaths' if `touse' `weightexpr', listwise `reliability' `vce' `constraints' `from' `options'
+`disoutput' `miprefix' `bsprefix' gsem `lastpath' `firstpaths' `addpaths' `weightexpr', listwise `reliability' `vce' `constraints' `from' `options'
 
 // return coefficient vector if requested
 if "`outmat'"!="" {
@@ -406,7 +405,11 @@ forvalues i = 1/`nmediators' {
 
 // mediation effect (total)
 tempname mediationcoef mediationvar
-if "`fast'"=="" {
+if "`fast'"!="" {
+	matrix define `mediationcoef' = `mediationeffect'
+	matrix define `mediationvar' = 0
+}
+else {
 	`disoutput' di _newline
 	
 	if "`confounders'"=="" {
@@ -418,10 +421,6 @@ if "`fast'"=="" {
 	quietly nlcom `mediationeffect'
 	matrix define `mediationcoef' = r(b)
 	matrix define `mediationvar' = r(V)
-}
-else {
-	matrix define `mediationcoef' = `mediationeffect'
-	matrix define `mediationvar' = 0
 }
 
 // confounding effects
@@ -449,16 +448,17 @@ if "`confounders'"!="" {
 			matrix `V_fin'[`j',`j'] = 0
 		}
 	}
-	if "`fast'"=="" {
+	
+	if "`fast'"!="" {
+		matrix define `confoundingcoef' = `confoundingeffect'
+		matrix define `confoundingvar' = 0
+	}	
+	else {
 		`disoutput' di _newline
 		di as text "confounding effect..." _cont
 		quietly nlcom `confoundingeffect'
 		matrix define `confoundingcoef' = r(b)
 		matrix define `confoundingvar' = r(V)
-	}
-	else {
-		matrix define `confoundingcoef' = `confoundingeffect'
-		matrix define `confoundingvar' = 0
 	}
 }
 else {
@@ -468,16 +468,16 @@ else {
 
 // total effect
 tempname totalcoef totalvar
-if "`fast'"=="" {
+if "`fast'"!="" {
+	matrix define `totalcoef' = _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
+	matrix define `totalvar' = 0
+}
+else {
 	`disoutput' di _newline
 	di as text "total effect..."
 	quietly nlcom _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
 	matrix define `totalcoef' = r(b)
 	matrix define `totalvar' = r(V)
-}
-else {
-	matrix define `totalcoef' = _b[`depvar':`decompose'] + `mediationeffect' + `confoundingeffect'
-	matrix define `totalvar' = 0
 }
 
 // restore original data
