@@ -209,7 +209,12 @@ if "`miprefix'"!="" {
 }
 marksample touse
 markout `touse' `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' `clustvar', strok
-quietly keep if `touse'
+if "`'miprefix'"!="" {
+	quietly keep if `touse' | _mi_m==0
+}
+else {
+	quietly keep if `touse'
+}
 
 
 * set mediating paths
