@@ -209,7 +209,7 @@ if "`miprefix'"!="" {
 }
 marksample touse
 markout `touse' `depvar' `decompose' `mediators' `confounders' `concomitants' `relvars' `clustvar', strok
-if "`'miprefix'"!="" {
+if "`miprefix'"!="" {
 	quietly keep if `touse' | _mi_m==0
 }
 else {
